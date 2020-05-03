@@ -1,0 +1,193 @@
+---
+title: "Effect of Internet Access on Job Search Costs"
+author: "Matthew Borelli"
+date: "4/25/2020"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+# This sets all chunks automatically to echo = FALSE
+knitr::opts_chunk$set(echo = FALSE)
+
+# The following are all of the packages needed to replicate this assignment
+library(haven)
+library(dplyr)
+library(mlr)
+library(data.table)
+library(ggplot2)
+library(reshape2)
+
+setwd("D:/Documents/MA Econ/Spring/Causal Inference/Causal-Inference-Project/R Script")
+ATUS = read.csv("../data/atus_00002.csv")
+hi_speed = read_dta("../data/hispdlines.dta")
+ST_FIPS = fread("D:/Documents/MA Econ/Spring/Causal Inference/Causal-Inference-Project/Data/us-state-ansi-fips.csv")
+```
+```{r data_work, include= FALSE}
+# For data from ATUS, we have to make some transformations to aggregate over state data correctly
+
+# This next thing is a cheat to get the number of observations for each state and timeframe
+
+ATUS$obs = 1 
+
+# NOTE: I want to be able to do this as a for loop eventually, should ask on StackExchange
+ATUS$REGION = as.factor(ATUS$REGION)
+ATUS$SEX = as.factor(ATUS$SEX)
+ATUS$RACE = as.factor(ATUS$RACE)
+ATUS$HISPAN = as.factor(ATUS$HISPAN)
+ATUS$MARST = as.factor(ATUS$MARST)
+ATUS$EDUC = as.factor(ATUS$EDUC)
+ATUS$EDUCYRS = as.factor(ATUS$EDUCYRS)
+ATUS$EMPSTAT = as.factor(ATUS$EMPSTAT)
+ATUS$LOOKING = as.factor(ATUS$LOOKING)
+ATUS$RETIRED = as.factor(ATUS$RETIRED)
+ATUS$WANTJOB_CPS8 = as.factor(ATUS$WANTJOB_CPS8)
+ATUS$FWK_EMPLR = as.factor(ATUS$FWK_EMPLR)
+ATUS$FAMINCOME = as.factor(ATUS$FAMINCOME)
+
+#create trend
+if (ATUS$YEAR == 2003) {
+  ATUS$TREND = 1
+} else if (ATUS$YEAR == 2004) {
+  ATUS$TREND = 2
+} else if (ATUS$YEAR == 2005) {
+  ATUS$TREND = 3
+} else if (ATUS$YEAR == 2006) {
+  ATUS$TREND = 4
+} else if (ATUS$YEAR == 2007) {
+  ATUS$TREND = 5
+} else {ATUS$TREND = 0} 
+
+# Create proportion of connections per person
+
+hi_speed$res_percent = hi_speed$reslines / hi_speed$households
+hi_speed$tot_percent = hi_speed$totlines / hi_speed$households
+
+ATUS_emp = subset(ATUS, EMPSTAT == 1)
+ATUS_unemp = subset(ATUS, EMPSTAT == 4 & WANTJOB_CPS8 != 2)
+ATUS_emp_look = subset(ATUS_emp, Job_Search_Time > 0)
+ATUS_unemp_look = subset(ATUS_unemp, Job_Search_Time > 0)
+
+ATUS_emp_dummy = createDummyFeatures(ATUS_emp, cols = c("REGION", "FAMINCOME", "SEX", "RACE", "HISPAN", "MARST", "EDUC", "EDUCYRS"))
+ATUS_unemp_dummy = createDummyFeatures(ATUS_unemp, cols = c("REGION", "FAMINCOME", "SEX", "RACE", "HISPAN", "MARST", "EDUC", "EDUCYRS"))
+ATUS_emp_look_dummy = createDummyFeatures(ATUS_emp_look, cols = c("REGION", "FAMINCOME", "SEX", "RACE", "HISPAN", "MARST", "EDUC", "EDUCYRS"))
+ATUS_unemp_look_dummy = createDummyFeatures(ATUS_unemp_look, cols = c("REGION", "FAMINCOME", "SEX", "RACE", "HISPAN", "MARST", "EDUC", "EDUCYRS"))
+
+#Drop now useless columns
+ATUS_emp_dummy = subset(ATUS_emp_dummy, select = -c(CASEID, PERNUM, LINENO, WT06, EMPSTAT, LOOKING, RETIRED, WANTJOB_CPS8, FWK_EMPLR))
+ATUS_unemp_dummy = subset(ATUS_unemp_dummy, select = -c(CASEID, PERNUM, LINENO, WT06, EMPSTAT, LOOKING, RETIRED, WANTJOB_CPS8, FWK_EMPLR))
+ATUS_emp_look_dummy = subset(ATUS_emp_look_dummy, select = -c(CASEID, PERNUM, LINENO, WT06, EMPSTAT, LOOKING, RETIRED, WANTJOB_CPS8, FWK_EMPLR))
+ATUS_unemp_look_dummy = subset(ATUS_unemp_look_dummy, select = -c(CASEID, PERNUM, LINENO, WT06, EMPSTAT, LOOKING, RETIRED, WANTJOB_CPS8, FWK_EMPLR))
+#Have to do the next set of operations 4 times, one for each data set
+
+#First create summary of indicators, then merge data sets together
+
+#ATUS Employed
+ATUS_emp_summary = ATUS_emp_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise_all(mean)
+
+ATUS_emp_obs = ATUS_emp_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise(N = sum(obs))
+
+ATUS_merge1 = merge(ATUS_emp_summary, ST_FIPS, by.x=c("STATEFIP"), by.y=c("st") )
+ATUS_merge2 = merge(ATUS_merge1, ATUS_emp_obs, by=c("STATEFIP", "YEAR"))
+ATUS_emp_final = merge(ATUS_merge2, hi_speed, by.x=c("stname", "YEAR"), by.y=c("state", "year"))
+
+#ATUS Unemployed
+ATUS_unemp_summary = ATUS_unemp_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise_all(mean)
+
+ATUS_unemp_obs = ATUS_unemp_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise(N = sum(obs))
+
+ATUS_merge1 = merge(ATUS_unemp_summary, ST_FIPS, by.x=c("STATEFIP"), by.y=c("st") )
+ATUS_merge2 = merge(ATUS_merge1, ATUS_unemp_obs, by=c("STATEFIP", "YEAR"))
+ATUS_unemp_final = merge(ATUS_merge2, hi_speed, by.x=c("stname", "YEAR"), by.y=c("state", "year"))
+
+#ATUS Employed & looked for work
+ATUS_emp_look_summary = ATUS_emp_look_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise_all(mean)
+
+ATUS_emp_look_obs = ATUS_emp_look_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise(N = sum(obs))
+
+ATUS_merge1 = merge(ATUS_emp_look_summary, ST_FIPS, by.x=c("STATEFIP"), by.y=c("st") )
+ATUS_merge2 = merge(ATUS_merge1, ATUS_emp_look_obs, by=c("STATEFIP", "YEAR"))
+ATUS_emp_look_final = merge(ATUS_merge2, hi_speed, by.x=c("stname", "YEAR"), by.y=c("state", "year"))
+
+#ATUS Unemployed & looked for work
+ATUS_unemp_look_summary = ATUS_unemp_look_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise_all(mean)
+
+ATUS_unemp_look_obs = ATUS_unemp_look_dummy %>%
+  group_by(YEAR, STATEFIP) %>%
+  summarise(N = sum(obs))
+
+ATUS_merge1 = merge(ATUS_unemp_look_summary, ST_FIPS, by.x=c("STATEFIP"), by.y=c("st") )
+ATUS_merge2 = merge(ATUS_merge1, ATUS_unemp_look_obs, by=c("STATEFIP", "YEAR"))
+ATUS_unemp_look_final = merge(ATUS_merge2, hi_speed, by.x=c("stname", "YEAR"), by.y=c("state", "year"))
+
+#drop Hawaii, has incomplete states across all
+ATUS_emp_final = subset(ATUS_emp_final, subset = (stusps != "HI"))
+ATUS_unemp_final = subset(ATUS_unemp_final, subset = (stusps != "HI"))
+ATUS_emp_look_final = subset(ATUS_emp_look_final, subset = (stusps != "HI"))
+ATUS_unemp_look_final = subset(ATUS_unemp_look_final, subset = (stusps != "HI"))
+
+#plus create one for just year for each in order to check for covariate balance
+ATUS_emp_year = ATUS_emp_final %>%
+  group_by(YEAR) %>%
+  summarise_all(mean)
+ATUS_unemp_year = ATUS_unemp_final %>%
+  group_by(YEAR) %>%
+  summarise_all(mean)
+ATUS_emp_look_year = ATUS_emp_look_final %>%
+  group_by(YEAR) %>%
+  summarise_all(mean)
+ATUS_unemp_look_year = ATUS_unemp_look_final %>%
+  group_by(YEAR) %>%
+  summarise_all(mean)
+#drop meaningless columns
+ATUS_emp_year = subset(ATUS_emp_year, select = -c(stname, stusps))
+ATUS_unemp_year = subset(ATUS_unemp_year, select = -c(stname, stusps))
+ATUS_emp_look_year = subset(ATUS_unemp_look_year, select = -c(stname, stusps))
+ATUS_unemp_look_year = subset(ATUS_unemp_look_year, select = -c(stname, stusps))
+```
+## Introduction
+
+## Data
+
+Notes: ATUS data from 2003-2007, with four categories being studied: employed, unemployed, employed and searched for work, unemployed and searched for work. Note what the hi speed residential and total mean.
+
+## Model
+
+## Covariate Balance
+
+```{r covariate balance, echo=FALSE, include=TRUE}
+# Use Melt in Reshape 2 in order to make out 
+
+ATUS_unemp_year$Bracket_1 = ATUS_unemp_year$FAMINCOME.1 + ATUS_unemp_year$FAMINCOME.2 + ATUS_unemp_year$FAMINCOME.3 + ATUS_unemp_year$FAMINCOME.4 + ATUS_unemp_year$FAMINCOME.5 + ATUS_unemp_year$FAMINCOME.6 + ATUS_unemp_year$FAMINCOME.7
+ATUS_unemp_year$Bracket_2 = ATUS_unemp_year$FAMINCOME.8 + ATUS_unemp_year$FAMINCOME.9 + ATUS_unemp_year$FAMINCOME.10 + ATUS_unemp_year$FAMINCOME.11 + ATUS_unemp_year$FAMINCOME.12
+ATUS_unemp_year$Bracket_3 = ATUS_unemp_year$FAMINCOME.13 + ATUS_unemp_year$FAMINCOME.14
+ATUS_unemp_year$Bracket_4 = ATUS_unemp_year$FAMINCOME.15 + ATUS_unemp_year$FAMINCOME.16
+
+
+
+melt_income = melt(ATUS_unemp_year[, c("YEAR", "Bracket_1", "Bracket_2", "Bracket_3", "Bracket_4")], id = "YEAR")
+
+ggplot(data = ATUS_unemp_year) +
+  geom_line(mapping = aes(y = SEX.1, x = YEAR)) +
+  ylim(0, 1) + 
+  labs(y = "Year", x = "US Male population %", title = "Percentage of Men over Panel Period (2003 - 2007)")
+
+ggplot(data = melt_income) + 
+  geom_line(mapping = aes(x = YEAR, y = value, color = variable))
+```
+
+## OLS Estimation
+
+## Conclusion
