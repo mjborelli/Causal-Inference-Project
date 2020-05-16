@@ -15,6 +15,9 @@ library(mlr)
 library(data.table)
 library(ggplot2)
 library(reshape2)
+library(stargazer)
+library(tinytex)
+library(kableExtra)
 
 setwd("D:/Documents/MA Econ/Spring/Causal Inference/Causal-Inference-Project/R Script")
 ATUS = read.csv("../data/atus_00002.csv")
@@ -29,6 +32,7 @@ ST_FIPS = fread("D:/Documents/MA Econ/Spring/Causal Inference/Causal-Inference-P
 ATUS$obs = 1 
 
 # NOTE: I want to be able to do this as a for loop eventually, should ask on StackExchange
+ATUS$YEAR = as.factor(ATUS$YEAR)
 ATUS$REGION = as.factor(ATUS$REGION)
 ATUS$SEX = as.factor(ATUS$SEX)
 ATUS$RACE = as.factor(ATUS$RACE)
@@ -43,26 +47,17 @@ ATUS$WANTJOB_CPS8 = as.factor(ATUS$WANTJOB_CPS8)
 ATUS$FWK_EMPLR = as.factor(ATUS$FWK_EMPLR)
 ATUS$FAMINCOME = as.factor(ATUS$FAMINCOME)
 
-#create trend
-if (ATUS$YEAR == 2003) {
-  ATUS$TREND = 1
-} else if (ATUS$YEAR == 2004) {
-  ATUS$TREND = 2
-} else if (ATUS$YEAR == 2005) {
-  ATUS$TREND = 3
-} else if (ATUS$YEAR == 2006) {
-  ATUS$TREND = 4
-} else if (ATUS$YEAR == 2007) {
-  ATUS$TREND = 5
-} else {ATUS$TREND = 0} 
 
 # Create proportion of connections per person
 
 hi_speed$res_percent = hi_speed$reslines / hi_speed$households
 hi_speed$tot_percent = hi_speed$totlines / hi_speed$households
+ATUS$searched = ifelse(ATUS$Job_Search_Time > 0, 1, 0)
 
 ATUS_emp = subset(ATUS, EMPSTAT == 1)
 ATUS_unemp = subset(ATUS, EMPSTAT == 4 & WANTJOB_CPS8 != 2)
+ATUS_emp = ATUS_emp[complete.cases(ATUS_emp),]
+ATUS_unemp = ATUS_unemp[complete.cases(ATUS_unemp),]
 ATUS_emp_look = subset(ATUS_emp, Job_Search_Time > 0)
 ATUS_unemp_look = subset(ATUS_unemp, Job_Search_Time > 0)
 
@@ -138,56 +133,222 @@ ATUS_unemp_final = subset(ATUS_unemp_final, subset = (stusps != "HI"))
 ATUS_emp_look_final = subset(ATUS_emp_look_final, subset = (stusps != "HI"))
 ATUS_unemp_look_final = subset(ATUS_unemp_look_final, subset = (stusps != "HI"))
 
-#plus create one for just year for each in order to check for covariate balance
-ATUS_emp_year = ATUS_emp_final %>%
-  group_by(YEAR) %>%
-  summarise_all(mean)
-ATUS_unemp_year = ATUS_unemp_final %>%
-  group_by(YEAR) %>%
-  summarise_all(mean)
-ATUS_emp_look_year = ATUS_emp_look_final %>%
-  group_by(YEAR) %>%
-  summarise_all(mean)
-ATUS_unemp_look_year = ATUS_unemp_look_final %>%
-  group_by(YEAR) %>%
-  summarise_all(mean)
-#drop meaningless columns
-ATUS_emp_year = subset(ATUS_emp_year, select = -c(stname, stusps))
-ATUS_unemp_year = subset(ATUS_unemp_year, select = -c(stname, stusps))
-ATUS_emp_look_year = subset(ATUS_unemp_look_year, select = -c(stname, stusps))
-ATUS_unemp_look_year = subset(ATUS_unemp_look_year, select = -c(stname, stusps))
+rm(ATUS_emp, ATUS_unemp, ATUS_emp_look, ATUS_unemp_look, ATUS_emp_summary, ATUS_emp_obs, ATUS_merge1, ATUS_merge2, ATUS_unemp_summary, ATUS_unemp_obs, ATUS_emp_look_summary, ATUS_emp_look_obs, ATUS_unemp_look_summary, ATUS_unemp_look_obs)
 ```
+
 ## Introduction
+
+The $21^{st}$ century has seen an incredible expansion of internet access in the United States. As of 2018, approximately 110 million households have broadband internet access, a `r 100*round(110.57/7.07, 2)`% increase over the 7.07 million households in 2000 (Statista). The internet has made many tasks easier to handle for Americans, from cutting out the need for bank trips to accessing large repositories of the world's knowledge within seconds. For this project, we want to examine the causal effect of increased internet access on job search costs. Specifically, we want to see if increased internet access has caused a decrease in the amount of time spent on job search activities including filling out job applications, sending out resumes, and contacting employers. The motivating idea behind this potential causal link is that the internet expidites the process of job search activities through websites like LinkedIn and text processors like Microsoft word. Therefore, as more people gain internet access across the country, we should expect to see that the amount time spent on job search activities has fallen.
+
+We consider the expansion of internet access to be a natural experiment, where many people across the U.S. gained access to broadband internet over a short period of time. Particularly, we look at the years 2003 to 2007, the period of most rapid growth in the $21^{st}$ century. In 2003 27.74 million households had broadband internet access subscriptions, and in 2007 that number had increased to 71.7 million households. This seemingly exogenous internet access shock, cause by the decline in prices and subsequent popularity of home personal computers, could effect job search times. This is important as even though the percentage of the population with internet access has continually increased over the years, many of the U.S.'s poorest citizens still cannot afford internet access. If internet access does cause decreases in job search costs, poorer citizens are the most affected group as they would want to find better jobs but fall behind other applicants who do have internet access. Therefore, if a causal link is established, there stands to be good reasons to promote policies that expand broadband access, such as municipally-owned ISP's or expansion of public library services.
 
 ## Data
 
-Notes: ATUS data from 2003-2007, with four categories being studied: employed, unemployed, employed and searched for work, unemployed and searched for work. Note what the hi speed residential and total mean.
+The first data set used for this project is from the American Time Use Survey (ATUS). A randomly selected subpopulation of people who partake in the Current Population survey are asked to log a diary for a 24-hour period that details all of their activities with time amounts. However, ATUS does not have the same people year-to-year, so this is panel data and not longitudinal data. Thus, the data is aggregated by state and year means in order to create more consistent year-to-year data. Of interest to this topic is the time-use category of "job search activities". According to the ATUS-X data extract builder, this time category includes but is not limited to the following actions:
+
+- Asking about job openings
+- Checking vacancies
+- Filling out job application
+- Making phone calls to prospective employers
+- Meeting with headhunter/temporary agency
+- Picking up job applications
+- Researching an employer
+- Sending out resumes
+- Submitting applications
+- Writing/updating resumes
+
+Each person in the data extract for this project has a listed time in minutes for job search activities, ranging from 0 to `r max(ATUS$Job_Search_Time)` minutes of search time. In the raw extract, unemployed and employed people are together with other categories such as students and retirees that would skew the data. As a processing step, we are going to consider four different subsets of the data:
+
+1. Employed
+2. Unemployed
+3. Employed with non-zero job search time
+4. Unemployed with non-zero job search time
+
+The first two will include people that did not partake in any job search activities, so estimations will not only account for changes in time spent on job search activities due to internet access changing the amount of time needed, but also of more people deciding to spend time on job search activities due to the newfound ease of access provided by broadband access. This implies that in trying to estimate the causal effect of internet access on job search costs, we might be estimating two opposite causal effects together. Internet access lowers the amount of time needed to do the same amount of job searching, but could actually increase the amount of time that people spend searching on average due to how easy it is. To try and isolate change caused by internet access lowering the amount of time needed, we create subsets for employed and unemployed workers who search for work, so that when aggregated to the state and year level means we are accounting for any potential people who chose to enter the job market.
+
+The other data source utilized in this project comes from Cunningham and Kendall's paper "Prostitution 2.0: The changing face of sex work". They used a data set that contains information on the number of high-speed broadband connections for each state for the years 1999-2007, of which we will use the data for 2003-2007. To note, we have to drop Hawaii from the data, as they have no recorded information for the number of residential connections until 2006. We use the number of residential connections per household as our measure of internet accesss. Expressing this number as a ratio controls for any changes in populations that might occur over the time period. Data also exists for the total number of broadband connections which includes businesses, but this is not relevant to this project. 
 
 ## Model
 
+We want to test for two causal effects: the effect of internet access on entering the job search market, and the effect of internet access on job search costs. To model the first effect, we regress the percentage of people who spent time on job search activities. For both the set of employed and unemployed people, we estimate this using the following equations:
+
+$$ W_{its} = a + \theta(Broadband_{ts}) + X_{its} + d_t + d_s + e_{its} $$
+$$ W_{its} = a + \theta(Broadband_{ts}) + X_{its} + d_t + d_s + d_s*trend + e_{its} $$
+Where $W_{its}$ is the percentage of people who spend any time on job search activities. The *i* subscript denotes each obsetvation, the *t* subcript denotes the year, and the *s* subscript denotes the state. $Broadband_{ts}$ is the percent of residential households with broadband access for a given state and year. $X_{its}$ is the vector of additional control variables including race, income level, and gender f. There are two fixed effects parameters: $d_t$ for year fixed effects, and $d_s$ for state fixed effects. The residuals from the regression are represented as $e_{its}$.  The two equations are mostly similar, with the only difference being the addition of the *trend* (set to 1 for 2003 through 5 for 2007) interacted with state fixed effects in the second equation. The causal effect is estimated by $\theta$, the coefficient for household broadband access percentage.
+
+
+To estimate the causal effect of internet access on job search costs, we will utilize ordinary least squares regression with state and year fixed effect. For each of the four groups mentioned above, we will estimate the following equations:
+
+$$ Y_{its} = a + \delta(Broadband_{ts}) + X_{its} + d_t + d_s + e_{its} $$
+$$ Y_{its} = a + \delta(Broadband_{ts}) + \beta X_{its} + d_t + d_s + d_s*trend + e_{its} $$
+For these equations, the causal effect of interest is $\delta$, the coefficient for the effect of residential broadband connectionon on job search time. By using state and year fixed effects, this will be an unbiased estimator of the causal effectl
+
 ## Covariate Balance
+```{r covariate table info, results='asis', echo = FALSE, warning = FALSE}
 
-```{r covariate balance, echo=FALSE, include=TRUE}
-# Use Melt in Reshape 2 in order to make out 
-
-ATUS_unemp_year$Bracket_1 = ATUS_unemp_year$FAMINCOME.1 + ATUS_unemp_year$FAMINCOME.2 + ATUS_unemp_year$FAMINCOME.3 + ATUS_unemp_year$FAMINCOME.4 + ATUS_unemp_year$FAMINCOME.5 + ATUS_unemp_year$FAMINCOME.6 + ATUS_unemp_year$FAMINCOME.7
-ATUS_unemp_year$Bracket_2 = ATUS_unemp_year$FAMINCOME.8 + ATUS_unemp_year$FAMINCOME.9 + ATUS_unemp_year$FAMINCOME.10 + ATUS_unemp_year$FAMINCOME.11 + ATUS_unemp_year$FAMINCOME.12
-ATUS_unemp_year$Bracket_3 = ATUS_unemp_year$FAMINCOME.13 + ATUS_unemp_year$FAMINCOME.14
-ATUS_unemp_year$Bracket_4 = ATUS_unemp_year$FAMINCOME.15 + ATUS_unemp_year$FAMINCOME.16
-
-
-
-melt_income = melt(ATUS_unemp_year[, c("YEAR", "Bracket_1", "Bracket_2", "Bracket_3", "Bracket_4")], id = "YEAR")
-
-ggplot(data = ATUS_unemp_year) +
-  geom_line(mapping = aes(y = SEX.1, x = YEAR)) +
-  ylim(0, 1) + 
-  labs(y = "Year", x = "US Male population %", title = "Percentage of Men over Panel Period (2003 - 2007)")
-
-ggplot(data = melt_income) + 
-  geom_line(mapping = aes(x = YEAR, y = value, color = variable))
+# Create year summaries with no regards to state
+ATUS_year_emp = ATUS_emp_dummy %>%
+  group_by(YEAR) %>%
+  summarise(Age = mean(AGE), Male = mean(SEX.1), Black = mean(RACE.110), Hispanic = 1 - mean(HISPAN.100),  Income_0_25000 = mean(FAMINCOME.1 + FAMINCOME.2 + FAMINCOME.3 + FAMINCOME.4 + FAMINCOME.5 + FAMINCOME.6 + FAMINCOME.7), Income_25000_60000 = mean(FAMINCOME.8 + FAMINCOME.9 + FAMINCOME.10 + FAMINCOME.11 + FAMINCOME.12), Income_60000_100000 = mean(FAMINCOME.13 + FAMINCOME.14), Income_100000 = mean(FAMINCOME.15 + FAMINCOME.16), Married = mean(MARST.1))
+ATUS_year_unemp = ATUS_unemp_dummy %>%
+  group_by(YEAR) %>%
+  summarise(Age = mean(AGE), Male = mean(SEX.1), Black = mean(RACE.110), Hispanic = 1 - mean(HISPAN.100),  Income_0_25000 = mean(FAMINCOME.1 + FAMINCOME.2 + FAMINCOME.3 + FAMINCOME.4 + FAMINCOME.5 + FAMINCOME.6 + FAMINCOME.7), Income_25000_60000 = mean(FAMINCOME.8 + FAMINCOME.9 + FAMINCOME.10 + FAMINCOME.11 + FAMINCOME.12), Income_60000_100000 = mean(FAMINCOME.13 + FAMINCOME.14), Income_100000 = mean(FAMINCOME.15 + FAMINCOME.16), Married = mean(MARST.1))
 ```
+
+Before estimating the causal effect parameters, we want to check that the covariates we are controlling for are balanced over the data, both for the employed and unemployed subpopulations. The following tables display the averages for the covariates in $X_{its}$: Age, sex, race, income brackets, and marriage.
+
+\begin{table}
+\caption{Covariates Over Time for Employed Respondents}
+\centering
+\begin{tabular}{l|lllll}
+\toprule
+\multicolumn{1}{l}{\textbf{Variable}}&
+\multicolumn{1}{l}{\textbf{2003}}&
+\multicolumn{1}{l}{\textbf{2004}}&
+\multicolumn{1}{l}{\textbf{2005}}&
+\multicolumn{1}{l}{\textbf{2006}}&
+\multicolumn{1}{l}{\textbf{2007}}\\
+Age & `r round(ATUS_year_emp[1,2],2)` & `r round(ATUS_year_emp[2,2], 2)` & `r round(ATUS_year_emp[3,2],2)` & `r round(ATUS_year_emp[4,2],2)` & `r round(ATUS_year_emp[5,2],2)` \\
+\midrule
+Male & `r round(ATUS_year_emp[1,3],2)` & `r round(ATUS_year_emp[2,3],2)` & `r round(ATUS_year_emp[3,3],2)` & `r round(ATUS_year_emp[4,3],2)` & `r round(ATUS_year_emp[5,3],2)`\\
+\midrule
+Black & `r round(ATUS_year_emp[1,4],2)` & `r round(ATUS_year_emp[2,4],2)` & `r round(ATUS_year_emp[3,4],2)` & `r round(ATUS_year_emp[4,4],2)` & `r round(ATUS_year_emp[5,4],2)` \\
+\midrule
+Hispanic & `r round(ATUS_year_emp[1,5],2)` & `r round(ATUS_year_emp[2,5],2)` & `r round(ATUS_year_emp[3,5],2)` & `r round(ATUS_year_emp[4,5],2)` & `r round(ATUS_year_emp[5,5],2)` \\
+\midrule
+$\$$0 - $\$$25000  &  `r round(ATUS_year_emp[1,6],2)` & `r round(ATUS_year_emp[2,6],2)` & `r round(ATUS_year_emp[3,6],2)` & `r round(ATUS_year_emp[4,6],2)` & `r round(ATUS_year_emp[5,6],2)` \\
+\midrule
+$\$$25000 - $\$$60000 & `r round(ATUS_year_emp[1,7],2)` & `r round(ATUS_year_emp[2,7],2)` & `r round(ATUS_year_emp[3,7],2)` & `r round(ATUS_year_emp[4,7],2)` & `r round(ATUS_year_emp[5,7],2)` \\
+\midrule 
+$\$$60000 - $\$$100000 & `r round(ATUS_year_emp[1,8],2)` & `r round(ATUS_year_emp[2,8],2)` & `r round(ATUS_year_emp[3,8],2)` & `r round(ATUS_year_emp[4,8],2)` & `r round(ATUS_year_emp[5,8],2)` \\
+\midrule
+$\$$100000+ & `r round(ATUS_year_emp[1,9],2)` & `r round(ATUS_year_emp[2,9],2)` & `r round(ATUS_year_emp[3,9],2)` & `r round(ATUS_year_emp[4,9],2)` & `r round(ATUS_year_emp[5,9],2)`\\
+\midrule
+Married & `r round(ATUS_year_emp[1,10],2)` & `r round(ATUS_year_emp[2,10],2)` & `r round(ATUS_year_emp[3,10],2)` & `r round(ATUS_year_emp[4,10],2)` &`r round(ATUS_year_emp[5,10],2)`\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}
+\caption{Covariates Over Time for Unemployed Respondents}
+\centering
+\begin{tabular}{l|lllll}
+\toprule
+\multicolumn{1}{l}{\textbf{Variable}}&
+\multicolumn{1}{l}{\textbf{2003}}&
+\multicolumn{1}{l}{\textbf{2004}}&
+\multicolumn{1}{l}{\textbf{2005}}&
+\multicolumn{1}{l}{\textbf{2006}}&
+\multicolumn{1}{l}{\textbf{2007}}\\
+
+Age & `r round(ATUS_year_unemp[1,2],2)` & `r round(ATUS_year_unemp[2,2], 2)` & `r round(ATUS_year_unemp[3,2],2)` & `r round(ATUS_year_unemp[4,2],2)` & `r round(ATUS_year_unemp[5,2],2)` \\
+\midrule
+Male & `r round(ATUS_year_unemp[1,3],2)` & `r round(ATUS_year_unemp[2,3],2)` & `r round(ATUS_year_unemp[3,3],2)` & `r round(ATUS_year_unemp[4,3],2)` & `r round(ATUS_year_unemp[5,3],2)`\\
+\midrule
+Black & `r round(ATUS_year_unemp[1,4],2)` & `r round(ATUS_year_unemp[2,4],2)` & `r round(ATUS_year_unemp[3,4],2)` & `r round(ATUS_year_unemp[4,4],2)` & `r round(ATUS_year_unemp[5,4],2)` \\
+\midrule
+Hispanic & `r round(ATUS_year_unemp[1,5],2)` & `r round(ATUS_year_unemp[2,5],2)` & `r round(ATUS_year_unemp[3,5],2)` & `r round(ATUS_year_unemp[4,5],2)` & `r round(ATUS_year_unemp[5,5],2)` \\
+\midrule
+$\$$0 - $\$$25000  &  `r round(ATUS_year_unemp[1,6],2)` & `r round(ATUS_year_unemp[2,6],2)` & `r round(ATUS_year_unemp[3,6],2)` & `r round(ATUS_year_unemp[4,6],2)` & `r round(ATUS_year_unemp[5,6],2)` \\
+\midrule
+$\$$25000 - $\$$60000 & `r round(ATUS_year_unemp[1,7],2)` & `r round(ATUS_year_unemp[2,7],2)` & `r round(ATUS_year_unemp[3,7],2)` & `r round(ATUS_year_unemp[4,7],2)` & `r round(ATUS_year_unemp[5,7],2)` \\
+\midrule 
+$\$$60000 - $\$$100000 & `r round(ATUS_year_unemp[1,8],2)` & `r round(ATUS_year_unemp[2,8],2)` & `r round(ATUS_year_unemp[3,8],2)` & `r round(ATUS_year_unemp[4,8],2)` & `r round(ATUS_year_unemp[5,8],2)` \\
+\midrule
+$\$$100000+ & `r round(ATUS_year_unemp[1,9],2)` & `r round(ATUS_year_unemp[2,9],2)` & `r round(ATUS_year_unemp[3,9],2)` & `r round(ATUS_year_unemp[4,9],2)` & `r round(ATUS_year_unemp[5,9],2)`\\
+\midrule
+Married & `r round(ATUS_year_unemp[1,10],2)` & `r round(ATUS_year_unemp[2,10],2)` & `r round(ATUS_year_unemp[3,10],2)` & `r round(ATUS_year_unemp[4,10],2)` &`r round(ATUS_year_unemp[5,10],2)`\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 ## OLS Estimation
 
+```{r first two ols, include=FALSE}
+emp_ols = lm(Job_Search_Time ~ res_percent + . - stname - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps  - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_emp_final)
+emp_year_ols = lm(Job_Search_Time ~ res_percent + . - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - - reslines - totlines - households - population - tot_percent, data = ATUS_emp_final)
+unemp_ols = lm(Job_Search_Time ~ res_percent + . - stname - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_unemp_final)
+unemp_year_ols = lm(Job_Search_Time ~ res_percent + . - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent, data = ATUS_unemp_final)
+
+summary(emp_ols)
+summary(emp_year_ols)
+summary(unemp_ols)
+summary(unemp_year_ols)
+```
+
+\begin{table}
+\caption{OLS Estimation for Populations}
+\centering
+\begin{tabular}{l|c c | c c }
+\toprule
+\multicolumn{1}{l}{\textbf{Outcome}}&
+\multicolumn{1}{c}{\textbf{Employed}}&
+\multicolumn{1}{c}{\textbf{}}&
+\multicolumn{1}{c}{\textbf{Unemployed}}&
+\multicolumn{1}{c}{\textbf{}}\\
+\multicolumn{1}{l}{\textbf{}}&
+\multicolumn{1}{c}{\textbf{1}}&
+\multicolumn{1}{c}{\textbf{2}}&
+\multicolumn{1}{c}{\textbf{1}}&
+\multicolumn{1}{c}{\textbf{2}}\\
+$res\_percent$ & 0.000223 & 0.0425 & 0.02862 & 119.2719 \\
+ & (0.03433) & (0.1713) & (0.01933) & (112.7149) \\
+\midrule
+Controls & x & x & x & x \\
+State/Year FE & & x & & x \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\tiny
+\item Standard errors in parenthesis. * p$<$0.10, ** p$<$0.05, *** p$<$0.01
+\end{tablenotes}
+\end{table}
+
+```{r looking ols, include=FALSE}
+emp_look_ols = lm(Job_Search_Time ~ res_percent + . - stname - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_emp_look_final)
+emp_look_year_ols = lm(Job_Search_Time ~ res_percent + . - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_emp_look_final)
+unemp_look_ols = lm(Job_Search_Time ~ res_percent + . - stname- STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_unemp_look_final)
+unemp_look_year_ols = lm(Job_Search_Time ~ res_percent + . - STATEFIP - AGE_CPS8 - Time_Working - obs - searched - stusps - reslines - totlines - households - population - tot_percent - YEAR, data = ATUS_unemp_look_final)
+
+summary(emp_look_ols)
+summary(emp_look_year_ols)
+summary(unemp_look_ols)
+summary(unemp_look_year_ols)
+```
+
+\begin{table}
+\caption{OLS Estimations for People Who Looked For Work}
+\centering
+\begin{tabular}{l|c c | c c }
+\toprule
+\multicolumn{1}{l}{\textbf{Outcome}}&
+\multicolumn{1}{c}{\textbf{Employed}}&
+\multicolumn{1}{c}{\textbf{}}&
+\multicolumn{1}{c}{\textbf{Unemployed}}&
+\multicolumn{1}{c}{\textbf{}}\\
+\multicolumn{1}{l}{\textbf{}}&
+\multicolumn{1}{c}{\textbf{1}}&
+\multicolumn{1}{c}{\textbf{2}}&
+\multicolumn{1}{c}{\textbf{1}}&
+\multicolumn{1}{c}{\textbf{2}}\\
+$res\_percent$ & -26.368 & -448.117 & 96.1271 & 116.4327 \\
+ & (66.269) & (244.812) & (64.807) & 101.0514 \\
+\midrule
+Controls & x & x & x & x\\
+State FE & & x & & x \\
+Year FE & & & &  \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\tiny
+\item Standard errors in parenthesis. * p$<$0.10, ** p$<$0.05, *** p$<$0.01
+\end{tablenotes}
+\end{table}
+
 ## Conclusion
+
+## Citations
+
+Sandra L. Hofferth, Sarah M. Flood, Matthew Sobek and Daniel Backman. American Time Use Survey Data Extract Builder: Version 2.8 [dataset]. College Park, MD: University of Maryland and Minneapolis, MN: IPUMS, 2020. https://doi.org/10.18128/D060.V2.8 
+
+thttps://www.statista.com/statistics/183614/us-households-with-broadband-internet-access-since-2009/
